@@ -86,6 +86,10 @@ def gen_array(data):
 
 def gen(data): yield data
 
+def emit_gen(data):
+  for r in data:
+    print r
+
 def emit(data):
   if type(data) in (list, tuple):
     emit_array(data)

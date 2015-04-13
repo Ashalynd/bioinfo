@@ -1,35 +1,74 @@
-class trie():
-    def __init__(self):
-        self.children = [{}]
+class trie_node():
+    def __init__(self, payload):
+        self.payload = payload
+        self.node_id = len(self.payload)
+        self.children = {} # symbol -> child_id
+        self.payload.append(self)
+    def child(self, symbol): return self.payload[self.children[symbol]]
+    def is_leaf(self): return not self.children
+    def ensure_child(self, symbol):
+        if symbol not in self.children:
+            new_node = self.__class__(self.payload)
+            self.children[symbol] = new_node.node_id
+        return self.child(symbol)
     def append(self, line):
-        if not line: return
-        current_node = 0
-        for letter in line:
-            if letter not in self.children[current_node]: 
-                self.children[current_node][letter]=len(self.children)
-                self.children.append({})
-            current_node = self.children[current_node][letter]
-    def add(self, lines): map(lambda line:self.append(line), lines)
-    # return itself as a list of [num_p->num_c:C] lines
-    def match(self, text):
-        empty_result = ''
-        if len(text)==0: return empty_result
-        result = empty_result
-        current_node = 0
-        current_pos = 0
-        len_text = len(text)
-        while current_pos<len_text:
-            if not self.children[current_node]: return result
-            symbol = text[current_pos]
-            if symbol not in self.children[current_node]: return empty_result
-            result += symbol
-            current_node = self.children[current_node][symbol]
-            current_pos +=1
+        if not line: return self.node_id
+        symbol = line[0]
+        return self.ensure_child(symbol).append(line[1:])
+    def match(self, line):
+        if not line: return True
+        symbol = line[0]
+        return symbol in self.children and self.child(symbol).match(line[1:])
+    def emit_edges(self):
+        return ['%s->%s:%s'%(self.node_id, child_id, key) for (key, child_id) in self.children.iteritems()]
     def emit(self):
-        for index, child in enumerate(self.children):
-            for key in child.keys():
-                yield '%s->%s:%s' %(index, child[key], key)
+        return 'id: %s, children: %s' % (self.node_id, self.children)
 
+class trie():
+    def new_node_class(self):
+        return trie_node(self.payload)
+    def __init__(self):
+        self.payload = []
+        self.root = self.new_node_class()
+    def append(self, line): 
+        self.count = self.root.append(line)
+        return self.count
+    def add(self, lines): 
+        map(lambda line:self.append(line), lines)
+        return self.count
+    def match(self, text): return self.root.match(text)
+    # return itself as a list of [num_p->num_c:C] lines
+    def emit_edges(self):
+        for node in self.payload: 
+            for line in node.emit_edges():
+                yield line
+    def emit(self):
+        for node in self.payload:
+            yield node.emit()
+
+class suffix_trie_node(trie_node):
+    def __init__(self, payload):
+        trie_node.__init__(self, payload)
+        self.label = None
+    def set_label(self, label): self.label = label
+    def emit(self):
+        return 'id: %s, label: %s, children: %s' % (self.node_id, self.label, self.children)
+
+class suffix_trie(trie):
+    def new_node_class(self):
+        return suffix_trie_node(self.payload)
+    def append_suffix(self, i):
+        node_id = self.append(self.text[i:])
+        last_node = self.payload[node_id]
+        if last_node.is_leaf(): last_node.set_label(i)
+    def construct(self, text):
+        self.text = text
+        len_text = len(text)
+        for i in xrange(len_text):
+            self.append_suffix(i)
+
+
+"""
 
 class suffix_node():
     def __init__(self, parent, position = None):
@@ -180,4 +219,4 @@ class suffix_tree():
             for child, child_value in value.children:
                 yield (key, value.label, child, child_value)
 
-
+"""
