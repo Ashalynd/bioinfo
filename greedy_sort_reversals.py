@@ -14,7 +14,7 @@ P = len(the_input)
 approxReversalDistance = 0
 
 while k<P:
-	#print k, the_input[k]
+#	print k, the_input[k]
 	if abs(the_input[k])!=k+1:
 		ke = k
 		while abs(the_input[ke])!=k+1:
@@ -28,3 +28,4 @@ while k<P:
 		output(the_input)
 	k+=1
 
+print k, approxReversalDistance

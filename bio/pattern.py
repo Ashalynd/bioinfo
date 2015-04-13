@@ -28,11 +28,20 @@ def number_to_pattern(number, k):
     letter_index = remainder % letters_num
     letter = letters[letter_index]
     pattern = letter + pattern
-    if remainder <=0:
-      break
     remainder = (remainder - letter_index) / letters_num
     index +=1
   return pattern
+
+def frequency_array(text, k):
+  max_len = 4**k
+  frequency_array = [0]*max_len
+  search_len = len(text)-k+1
+
+  for i in xrange(search_len):
+      pattern = text[i:i+k]
+      j = pattern_to_number(pattern)
+      frequency_array[j]+=1
+  return frequency_array
 
 def reverse(pattern):
   result = ''
