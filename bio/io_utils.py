@@ -17,6 +17,17 @@ def read_input():
 
   return result
 
+def read_adjacency_list(source, as_int = True):
+  result = {}
+  for line in source:
+    key, values = [part.strip() for part in line.split('->')]
+    values = values.split(',')
+    if as_int: 
+      values = [int(v) for v in values]
+      key = int(key)
+    result[key] = values
+  return result
+
 def generate_input(source, status):
   for line in source:
     if line.startswith('Input'):
@@ -35,11 +46,11 @@ def generate_sorted(source):
     yield output
 
 # method should return a generator
-def generate_input_output(method, sort_output = False):
+def generate_input_output(method, sort_output = False, compare = True):
   source = fileinput.input()
   status = {}
   result = method(generate_input(source, status))
-  if 'output' in status and status['output']:
+  if 'output' in status and status['output'] and compare:
     output = generate_output(source)
     if sort_output:
       result = generate_sorted(result)
@@ -48,6 +59,8 @@ def generate_input_output(method, sort_output = False):
     for r in result:
       try:
         o = output.next()
+        print r
+        print o
         out = (o == r)
         if not out: break
       except StopIteration:
@@ -83,6 +96,13 @@ def emit_array(data):
 
 def gen_array(data):
   yield stringify_array(data)
+
+def gen_lines(data, converter = None):
+  for line in data:
+    if not converter:
+      yield line
+    else:
+      yield converter(line)
 
 def gen(data): yield data
 

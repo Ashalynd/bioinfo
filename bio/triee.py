@@ -45,6 +45,8 @@ class trie():
     def emit(self):
         for node in self.payload:
             yield node.emit()
+    def adjacency_list(self):
+        return dict([(index, node.children.values()) for (index, node) in enumerate(self.payload)])
 
 class suffix_trie_node(trie_node):
     def __init__(self, payload):
@@ -66,6 +68,80 @@ class suffix_trie(trie):
         len_text = len(text)
         for i in xrange(len_text):
             self.append_suffix(i)
+
+#converts the adjacent list (ad dictionary) into dictionary of parents per node
+def parents_from_children(nodes):
+    parents = {}
+    for k, values in nodes.iteritems():
+        for v in values:
+            if not v in parents: parents[v] = set()
+            parents[v].add(k)
+    return parents
+
+
+#receives edges as adjacency list
+def non_branching_paths(edges):
+    from copy import deepcopy
+    paths = set()
+    indices = set()
+    #we need to find out if a node has more than one parent
+    parents = parents_from_children(edges)
+#    keys = deepcopy(edges.keys())
+    keys = filter(lambda key: len(edges[key])>1 or ((not key in parents) or len(parents[key])>1), edges.keys())
+    cycles_keys = set(edges.keys()).difference(set(keys))
+    #find non-cyclic non-branching paths
+    passed_keys = set()
+    while keys:
+        if not indices: indices = set([min(keys)])
+        index = indices.pop()
+        subnodes = edges[index] # index -> {0,1,2,3,...}
+        if not subnodes: continue
+        for next_index in subnodes:
+            path = [index] #start with parent
+            path.append(next_index)
+            path_nodes = set(path)
+            next_node = edges.get(next_index) # 
+            # node should exist, should have 1 in and 1 out
+            while next_node and len(next_node)==1 and len(parents[next_index])==1:
+                if next_index in keys: keys.remove(next_index)
+                if next_index in cycles_keys: cycles_keys.remove(next_index)
+                next_index = list(next_node)[0]
+                path.append(next_index)
+                if next_index in path_nodes: 
+                    next_node = None
+                    break
+                path_nodes.add(next_index)
+                next_node = edges.get(next_index)
+            if next_node and len(next_node)>1 and not next_index in passed_keys: indices.add(next_index)
+            paths.add(tuple(path))
+            passed_keys.add(index)
+        if index in keys: keys.remove(index)
+        if index in cycles_keys: cycles_keys.remove(index)
+    #find cycles
+    cycles = set()
+    while cycles_keys:
+        if not indices: indices = set([min(cycles_keys)])
+        index = indices.pop()
+        subnodes = edges[index] # index -> {0,1,2,3,...}
+        if not subnodes: continue
+        for next_index in subnodes:
+            path = [index] #start with parent
+            path.append(next_index)
+            path_nodes = set(path)
+            next_node = edges.get(next_index) # 
+            # node should exist, should have 1 in and 1 out
+            while next_node and len(next_node)==1 and len(parents[next_index])==1 and next_index!=index:
+                if next_index in cycles_keys: cycles_keys.remove(next_index)
+                next_index = list(next_node)[0]
+                path.append(next_index)
+                if next_index in path_nodes: 
+                    next_node = None
+                    break
+                path_nodes.add(next_index)
+                next_node = edges.get(next_index)
+            cycles.add(tuple(path))
+        if index in cycles_keys: cycles_keys.remove(index)
+    return sorted(list(paths)) + sorted(list(cycles))
 
 
 """
