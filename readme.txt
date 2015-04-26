@@ -13,3 +13,4 @@ Step 5: (3-5-402) Pattern Matching -> 1-3-pattern_matching.py
 II.
 1. HOW DO WE LOCATE DISEASE-CAUSING MUTATIONS?
 1.3. Herding Patterns Into a Trie
+Step 4: (2-97) TrieConstruction -> trie_cons.py

@@ -10,4 +10,4 @@ def do_work(source):
         t.append(s)
     return t.emit()
 
-bio.io_utils.generate_input_output(do_work, True)
+bio.io_utils.generate_input_output(do_work, True, False)

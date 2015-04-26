@@ -1,46 +1,41 @@
-class trie_node():
-    def __init__(self, payload):
+class base_triee_node():
+    def __init__(self, payload, args = None):
+        # parameters:
+        # payload - a list where i-th element stores reference to i-th node
         self.payload = payload
         self.node_id = len(self.payload)
-        self.children = {} # symbol -> child_id
+        self.children = {} # key -> child_id
         self.payload.append(self)
-    def child(self, symbol): return self.payload[self.children[symbol]]
+    def child(self, key): return self.payload[self.children[key]]
     def is_leaf(self): return not self.children
-    def ensure_child(self, symbol):
-        if symbol not in self.children:
-            new_node = self.__class__(self.payload)
-            self.children[symbol] = new_node.node_id
-        return self.child(symbol)
-    def append(self, line):
-        if not line: return self.node_id
-        symbol = line[0]
-        return self.ensure_child(symbol).append(line[1:])
-    def match(self, line):
-        if not line: return True
-        symbol = line[0]
-        return symbol in self.children and self.child(symbol).match(line[1:])
-    def emit_edges(self):
+    def ensure_child(self, key, args = None):
+        # return a child corresponding to a given key. Creates one if key is not present.
+        if key not in self.children:
+            new_node = self.__class__(self.payload, args)
+            self.children[key] = new_node.node_id
+        return self.child(key)
+    def emit_edges(self, args = None):
+        # pretty-prints the parent-child connections
         return ['%s->%s:%s'%(self.node_id, child_id, key) for (key, child_id) in self.children.iteritems()]
     def emit(self):
+        # pretty-prints own + children ids
         return 'id: %s, children: %s' % (self.node_id, self.children)
 
-class trie():
+class base_triee():
     def new_node_class(self):
-        return trie_node(self.payload)
+        return base_triee_node(self.payload)
     def __init__(self):
+        # always creates a root node
         self.payload = []
         self.root = self.new_node_class()
-    def append(self, line): 
-        self.count = self.root.append(line)
-        return self.count
-    def add(self, lines): 
-        map(lambda line:self.append(line), lines)
-        return self.count
-    def match(self, text): return self.root.match(text)
-    # return itself as a list of [num_p->num_c:C] lines
-    def emit_edges(self):
+    def get_node(self, node_id): return self.payload[node_id]
+    def to_edges(self):
+        # returns a dictionary that contains only the links between the nodes
+        return dict(map(lambda item: (item.node_id, item.children.values()), self.payload))
+    def emit_edges(self, args = None):
+        # return itself as a list of [num_p->num_c:C] lines
         for node in self.payload: 
-            for line in node.emit_edges():
+            for line in node.emit_edges(args):
                 yield line
     def emit(self):
         for node in self.payload:
@@ -48,19 +43,52 @@ class trie():
     def adjacency_list(self):
         return dict([(index, node.children.values()) for (index, node) in enumerate(self.payload)])
 
+
+class trie_node(base_triee_node):
+    def split_key(self, line): return (line[0], line[1:])
+    def append(self, line):
+        # recursively add a new line of text to the suffix tree
+        if not line: return self.node_id
+        key, rest = self.split_key(line)
+        return self.ensure_child(key).append(rest)
+    def match(self, line):
+        # recursively looks for a match of the given line
+        if not line: return True
+        key, rest = self.split_key(line)
+        return key in self.children and self.child(key).match(rest)
+
+class trie(base_triee):
+    def new_node_class(self):
+        return trie_node(self.payload)
+    def append(self, line): 
+        self.count = self.root.append(line)
+        return self.count
+    def add(self, lines): 
+        map(lambda line:self.append(line), lines)
+        return self.count
+    def match(self, text): return self.root.match(text)
+    def adjacency_list(self):
+        return dict([(index, node.children.values()) for (index, node) in enumerate(self.payload)])
+
 class suffix_trie_node(trie_node):
-    def __init__(self, payload):
+    def __init__(self, payload, args = None):
         trie_node.__init__(self, payload)
         self.label = None
+        self.position = args['position'] if args else None
+    def append(self, line, position = 0):
+        if not line: return self.node_id
+        key, rest = self.split_key(line)
+        return self.ensure_child(key, {'position':position}).append(rest, position+1)
     def set_label(self, label): self.label = label
     def emit(self):
-        return 'id: %s, label: %s, children: %s' % (self.node_id, self.label, self.children)
+        return 'id: %s, label: %s, position: %s, children: %s' % (self.node_id, self.label, self.position, self.children)
 
+# trie that stores all suffixes for the given text
 class suffix_trie(trie):
     def new_node_class(self):
         return suffix_trie_node(self.payload)
     def append_suffix(self, i):
-        node_id = self.append(self.text[i:])
+        node_id = self.root.append(self.text[i:], i)
         last_node = self.payload[node_id]
         if last_node.is_leaf(): last_node.set_label(i)
     def construct(self, text):
@@ -82,67 +110,130 @@ def parents_from_children(nodes):
 #receives edges as adjacency list
 def non_branching_paths(edges):
     from copy import deepcopy
-    paths = set()
     indices = set()
-    #we need to find out if a node has more than one parent
+    # we need to find out if a node has more than one parent
     parents = parents_from_children(edges)
-#    keys = deepcopy(edges.keys())
+    # consider only keys which are not 1-1 nodes
     keys = filter(lambda key: len(edges[key])>1 or ((not key in parents) or len(parents[key])>1), edges.keys())
-    cycles_keys = set(edges.keys()).difference(set(keys))
     #find non-cyclic non-branching paths
     passed_keys = set()
-    while keys:
-        if not indices: indices = set([min(keys)])
-        index = indices.pop()
+
+    def traverse_subpath(index, check_passed, aggregator):
+        # index - active index to check for non-branching paths
+        # check_passed - whether to check if index has been considered yet (only important for isolated cycles)
+        # aggregator - where to put the found paths
+        if check_passed and index in passed_keys: return
         subnodes = edges[index] # index -> {0,1,2,3,...}
-        if not subnodes: continue
+        if not subnodes: return
         for next_index in subnodes:
-            path = [index] #start with parent
-            path.append(next_index)
-            path_nodes = set(path)
-            next_node = edges.get(next_index) # 
-            # node should exist, should have 1 in and 1 out
-            while next_node and len(next_node)==1 and len(parents[next_index])==1:
-                if next_index in keys: keys.remove(next_index)
-                if next_index in cycles_keys: cycles_keys.remove(next_index)
+            path = [index] # start with parent
+            while(True):
+                path.append(next_index) # at least 2 nodes in every non-breakable path
+                passed_keys.add(next_index)
+                # check whether the cycle has closed
+                if next_index==index: break
+                # every internal node in non-breakable path should be 1-in 1-out node
+                if len(parents[next_index])>1: break
+                next_node = edges.get(next_index) # set of children for the given index
+                if not(next_node) or len(next_node)>1: break
                 next_index = list(next_node)[0]
-                path.append(next_index)
-                if next_index in path_nodes: 
-                    next_node = None
-                    break
-                path_nodes.add(next_index)
-                next_node = edges.get(next_index)
-            if next_node and len(next_node)>1 and not next_index in passed_keys: indices.add(next_index)
-            paths.add(tuple(path))
-            passed_keys.add(index)
-        if index in keys: keys.remove(index)
-        if index in cycles_keys: cycles_keys.remove(index)
+            aggregator.add(tuple(path))
+        passed_keys.add(index)
+
+    paths = set()
+    for index in keys:
+        traverse_subpath(index, False, paths)
     #find cycles
     cycles = set()
-    while cycles_keys:
-        if not indices: indices = set([min(cycles_keys)])
-        index = indices.pop()
-        subnodes = edges[index] # index -> {0,1,2,3,...}
-        if not subnodes: continue
-        for next_index in subnodes:
-            path = [index] #start with parent
-            path.append(next_index)
-            path_nodes = set(path)
-            next_node = edges.get(next_index) # 
-            # node should exist, should have 1 in and 1 out
-            while next_node and len(next_node)==1 and len(parents[next_index])==1 and next_index!=index:
-                if next_index in cycles_keys: cycles_keys.remove(next_index)
-                next_index = list(next_node)[0]
-                path.append(next_index)
-                if next_index in path_nodes: 
-                    next_node = None
-                    break
-                path_nodes.add(next_index)
-                next_node = edges.get(next_index)
-            cycles.add(tuple(path))
-        if index in cycles_keys: cycles_keys.remove(index)
+    cycles_keys = set(edges.keys()).difference(passed_keys)
+    for index in cycles_keys:
+        traverse_subpath(index, True, cycles)
+        
     return sorted(list(paths)) + sorted(list(cycles))
 
+
+class suffix_tree_node(base_triee_node):
+    def __init__(self, payload, old_position = 0):
+        base_triee_node.__init__(self, payload)
+        self.label = None
+        self.old_position = old_position
+    def set_label(self, label): self.label = label
+    def emit(self):
+        return 'id: %s, label: %s, children: %s' % (self.node_id, self.label, self.children)
+    def emit_edges(self, args = None):
+        # pretty-prints the parent-child connections
+        if not args:
+            result = ['%s->%s:%s'%(self.node_id, child_id, key) for (key, child_id) in self.children.iteritems()]
+        else:
+            if not 'compact' in args: # full info
+                result = ['%s->%s:%s(%s)'%(self.node_id, child_id, (start, length), args['text'][start:(start+length)]) for ((start, length), child_id) in self.children.iteritems()]
+            else:
+                result = [args['text'][start:(start+length)] for (start, length) in self.children]
+        return result
+    def longest_repeat(self, start_pos = None):
+        if self.is_leaf():
+#            print "leaf", start_pos
+            return start_pos, -1
+        else:
+            max_length = 0
+            max_pos = start_pos
+            for ((pos, length), child_id) in self.children.iteritems():
+#                print "pos", pos, "length", length
+                child_pos, child_length = self.payload[child_id].longest_repeat(pos)
+#                print "child_pos", child_pos, "child_length", child_length
+                if child_length>=0 and (length + child_length > max_length):
+                    max_length = length + child_length
+                    max_pos = start_pos or child_pos
+            return max_pos, max_length
+
+
+class suffix_tree(base_triee):
+    def new_node_class(self):
+        return suffix_tree_node(self.payload)
+    def emit_edges_with_text(self): return self.emit_edges({'text': self.text})
+    def emit_edges_as_text(self): return self.emit_edges({'text': self.text, 'compact': True})
+    def from_trie(self, source):
+        # builds a suffix tree from suffix trie
+        # 1. generates non branching paths
+        # 2. finds out all nodes which are either in the beginning or at the end of the nbp
+        # 3. adds all of them to payload, notes the new position <=> old position
+        # 4. iterate over all nodes which made it to suffix tree and add the children (end nodes)
+        self.text = source.text
+        nb_paths = non_branching_paths(source.to_edges())
+        new_kids = dict([(path[1], path) for path in nb_paths]) # used to map the paths from the trie to tree
+        remaining_nodes = set()
+        map(lambda path: remaining_nodes.update(set([path[0], path[-1]])), nb_paths)
+        old_to_new = {0:0}
+        # relationships between old and new positions
+        for index, old_position in enumerate(sorted(list(remaining_nodes))[1:]): # 0 is already there
+            new_node = suffix_tree_node(self.payload, old_position)
+            old_to_new[old_position] = new_node.node_id # translating position in trie to position in tree
+        for node in remaining_nodes:
+            # get the old node and a node to which it will be converted
+            old_node = source.get_node(node)
+            new_node = self.get_node(old_to_new[node])
+#            print "old_node", old_node.emit(), "new_node", new_node.emit()
+            if old_node.is_leaf():
+                # if it's a leaf, only copy the label (start position of the text from which this branch was created)
+                new_node.label = old_node.label
+            else: # there are children - iterate over them
+                for subnode_id in old_node.children.values():
+                    # find corresponding node in the trie
+                    subnode = source.get_node(subnode_id)
+                    # find the corresponding non branching path
+                    nb_path = new_kids[subnode_id]
+                    assert(nb_path[0] == node) # paranoiac check
+                    # find the node in the new tree, corresponding to last path element
+                    end_node = source.get_node(nb_path[-1])
+                    new_end_node = old_to_new[end_node.node_id]
+                    # find start and end positions for the chunk of text related to this path
+                    start_pos = subnode.position
+                    end_pos = end_node.position
+                    # add the new link
+                    new_node.children[(start_pos, 1+end_pos-start_pos)] = new_end_node
+    def longest_repeat(self):
+        max_pos, max_length = self.root.longest_repeat()
+        return self.text[max_pos:(max_pos+max_length)]
 
 """
 

@@ -59,8 +59,8 @@ def generate_input_output(method, sort_output = False, compare = True):
     for r in result:
       try:
         o = output.next()
-        print r
-        print o
+#        print r
+#        print o
         out = (o == r)
         if not out: break
       except StopIteration:
@@ -88,14 +88,14 @@ def compare_with_output(result):
     for line in local_result: line = " ".join([str(i) for i in line])
   return local_result==output
 
-def stringify_array(data):
-  return " ".join([str(i) for i in data])
+def stringify_array(data, concat = ' '):
+  return concat.join([str(i) for i in data])
 
-def emit_array(data):
-  print(stringify_array(data))
+def emit_array(data, concat = ' '):
+  print(stringify_array(data, concat))
 
-def gen_array(data):
-  yield stringify_array(data)
+def gen_array(data, concat = ' '):
+  yield stringify_array(data, concat)
 
 def gen_lines(data, converter = None):
   for line in data:
