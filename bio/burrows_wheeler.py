@@ -1,4 +1,4 @@
-def bwt(s):
+def bwt(s, with_suffix_array = False):
     l = len(s)
     ll = [s]
     for i in xrange(1,l):
@@ -7,7 +7,10 @@ def bwt(s):
 #    print("ll", ll)
     ll.sort()
 #    print("ll", ll)
-    return ''.join([l[-1] for l in ll])
+    if not with_suffix_array:
+        return ''.join([elem[-1] for elem in ll])
+    else:
+        return ''.join([elem[-1] for elem in ll]), [l-elem.find('$')-1 for elem in ll]
 
 def reverse_bwt(last):
     first = sorted(last)
@@ -36,8 +39,9 @@ def reverse_bwt(last):
 #        print next_letter, prev_pos
     return result
 
-def bwmatching(last, pattern):
-    print "last", last, "pattern", pattern
+def bwmatching(last, pattern, suffix_array = None):
+#    print "last", last, "pattern", pattern
+#    if suffix_array: print "suffix_array", suffix_array
     first = sorted(last)
     pos = []
     prev_letter = ''
@@ -55,7 +59,7 @@ def bwmatching(last, pattern):
 #    print "letters", letters
 #    print "pos", pos
     lastfirst = [0]*len(pos)
-    print lastfirst
+#    print lastfirst
     for index, letter in enumerate(first):
         lastpos = letters[letter][pos[index]]
         lastfirst[lastpos] = index
@@ -67,13 +71,28 @@ def bwmatching(last, pattern):
         if len(pattern):
             symbol = pattern[-1]
             pattern = pattern[:-1]
-            if symbol in last[top:bottom+1]:
-                top_index = top+last[top:(bottom+1)].find(symbol)
-                bottom_index = top+last[top:(bottom+1)].rfind(symbol)
-                print "top_index", top_index, "bottom_index", bottom_index, "symbol", symbol
+            sub_last = last[top:bottom+1]
+            top_index = sub_last.find(symbol)
+            if top_index>=0: 
+                bottom_index = sub_last.rfind(symbol)
+            else:
+                if not suffix_array:
+                    return 0
+                else:
+                    return []
+            if bottom_index+top_index>=0:
+                top_index+=top
+                bottom_index +=top
+#                print "top_index", top_index, "bottom_index", bottom_index, "symbol", symbol
                 top = lastfirst[top_index]
                 bottom = lastfirst[bottom_index]
             else:
-                return 0
+                if not suffix_array:
+                    return 0
+                else:
+                    return []
         else:
-            return bottom-top+1
+            if not suffix_array:
+                return bottom-top+1
+            else:
+                return [suffix_array[i] for i in xrange(top, bottom+1)]

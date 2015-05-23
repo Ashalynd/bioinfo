@@ -28,8 +28,32 @@ def read_adjacency_list(source, as_int = True):
     result[key] = values
   return result
 
+def read_adjacency_list_with_weight(source, as_int = True):
+  result = {}
+  for line in source:
+    parent, payload = [part.strip() for part in line.split('->')]
+    child, weight = payload.split(':')
+    if as_int:
+      parent = int(parent)
+      child = int(child)
+      weight = int(weight)
+    if not parent in result:
+      result[parent] = {}
+    if not child in result[parent]:
+      result[parent][child] = weight
+  return result
+
+def read_int_matrix(source):
+    result = []
+    for line in source:
+        row = [int(elem) for elem in line.split()]
+        result.append(row)
+    return result
+
 def generate_input(source, status):
   for line in source:
+    if not line.strip(): 
+      continue
     if line.startswith('Input'):
       continue
     if line.startswith('Output'):
@@ -59,8 +83,8 @@ def generate_input_output(method, sort_output = False, compare = True):
     for r in result:
       try:
         o = output.next()
-#        print r
-#        print o
+        print r
+        print o
         out = (o == r)
         if not out: break
       except StopIteration:
@@ -97,6 +121,10 @@ def emit_array(data, concat = ' '):
 def gen_array(data, concat = ' '):
   yield stringify_array(data, concat)
 
+def gen_matrix(data, concat = ' '):
+  for row in matrix:
+    return gen_array(row)
+
 def gen_lines(data, converter = None):
   for line in data:
     if not converter:
@@ -104,7 +132,7 @@ def gen_lines(data, converter = None):
     else:
       yield converter(line)
 
-def gen(data): yield data
+def gen(data): yield str(data)
 
 def emit_gen(data):
   for r in data:

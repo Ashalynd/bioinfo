@@ -1,3 +1,11 @@
+class constants():
+    RED = 1
+    BLUE = 2
+    PURPLE = 3
+    GRAY = 0
+    to_string = {RED:'red', BLUE:'blue', PURPLE:'purple', GRAY:'gray'}
+    to_key = {v:k for (k,v) in to_string.iteritems()}
+
 class base_triee_node():
     def __init__(self, payload, args = None):
         # parameters:
@@ -76,9 +84,11 @@ class suffix_trie_node(trie_node):
         self.label = None
         self.position = args['position'] if args else None
     def append(self, line, position = 0):
-        if not line: return self.node_id
-        key, rest = self.split_key(line)
-        return self.ensure_child(key, {'position':position}).append(rest, position+1)
+        if not line: 
+            return self.node_id, None
+        else:
+            key, rest = self.split_key(line)
+            return self.ensure_child(key, {'position':position}).node_id, rest
     def set_label(self, label): self.label = label
     def emit(self):
         return 'id: %s, label: %s, position: %s, children: %s' % (self.node_id, self.label, self.position, self.children)
@@ -87,34 +97,47 @@ class suffix_trie_node(trie_node):
 class suffix_trie(trie):
     def new_node_class(self):
         return suffix_trie_node(self.payload)
-    def append_suffix(self, i):
-        node_id = self.root.append(self.text[i:], i)
+    def append_suffix(self, i, color = None):
+        position = i
+        node_id = 0
+        rest = self.text[position:]
+        while True:
+            node_id, rest = self.payload[node_id].append(rest, position)
+#            print "node_id", node_id, "rest", rest
+            if not rest: break
+            position +=1
         last_node = self.payload[node_id]
-        if last_node.is_leaf(): last_node.set_label(i)
-    def construct(self, text):
+        if last_node.is_leaf(): 
+            last_node.set_label(i)
+            if color: last_node.color = color
+    def construct(self, text, color = None):
         self.text = text
         len_text = len(text)
         for i in xrange(len_text):
-            self.append_suffix(i)
+            self.append_suffix(i, color)
 
 #converts the adjacent list (ad dictionary) into dictionary of parents per node
 def parents_from_children(nodes):
     parents = {}
-    for k, values in nodes.iteritems():
-        for v in values:
+    for k in nodes:
+        for v in nodes[k]:
             if not v in parents: parents[v] = set()
             parents[v].add(k)
     return parents
 
 
 #receives edges as adjacency list
-def non_branching_paths(edges):
+def non_branching_paths(edges, check_parents = True, check_cycles = True):
     from copy import deepcopy
     indices = set()
-    # we need to find out if a node has more than one parent
-    parents = parents_from_children(edges)
-    # consider only keys which are not 1-1 nodes
-    keys = filter(lambda key: len(edges[key])>1 or ((not key in parents) or len(parents[key])>1), edges.keys())
+    parents = {}
+    if check_parents:
+        # we need to find out if a node has more than one parent
+        parents = parents_from_children(edges)
+        # consider only keys which are not 1-1 nodes
+        keys = filter(lambda key: len(edges[key])>1 or ((not key in parents) or len(parents[key])>1), edges.keys())
+    else:
+        keys = [0] + filter(lambda key: len(edges[key])>1, edges.keys())
     #find non-cyclic non-branching paths
     passed_keys = set()
 
@@ -133,7 +156,7 @@ def non_branching_paths(edges):
                 # check whether the cycle has closed
                 if next_index==index: break
                 # every internal node in non-breakable path should be 1-in 1-out node
-                if len(parents[next_index])>1: break
+                if check_parents and len(parents[next_index])>1: break
                 next_node = edges.get(next_index) # set of children for the given index
                 if not(next_node) or len(next_node)>1: break
                 next_index = list(next_node)[0]
@@ -145,11 +168,45 @@ def non_branching_paths(edges):
         traverse_subpath(index, False, paths)
     #find cycles
     cycles = set()
-    cycles_keys = set(edges.keys()).difference(passed_keys)
-    for index in cycles_keys:
-        traverse_subpath(index, True, cycles)
+    if check_cycles:
+        cycles_keys = set(edges.keys()).difference(passed_keys)
+        for index in cycles_keys:
+            traverse_subpath(index, True, cycles)
         
     return sorted(list(paths)) + sorted(list(cycles))
+
+def tree_coloring(edges, input_leaves):
+    ct = constants
+    leaves = {key:(input_leaves[key] if key in input_leaves else ct.GRAY) for key in edges.keys()}
+    # receives edges and colors of leaves, returns list containing all edges and their colors
+    def is_ripe(node_id): return all(leaves[child_id]!=ct.GRAY for child_id in edges[node_id])
+    def has_child_color(node_id, color): return any(leaves[child_id]==color for child_id in edges[node_id])
+    def has_color(node_id): return leaves[node_id]!=ct.GRAY
+    uncolored = edges.keys()
+    while uncolored:
+        next_uncolored = []
+        for node_id in uncolored:
+            if has_color(node_id): continue
+            if not is_ripe(node_id):
+                next_uncolored.append(node_id)
+            else:
+                color = leaves[node_id]
+#                print node_id, color, ','.join([str(leaves[child_id]) for child_id in edges[node_id]])
+                has_blue = has_child_color(node_id, ct.BLUE)
+                has_red = has_child_color(node_id, ct.RED)
+                has_purple = has_child_color(node_id, ct.PURPLE)
+                if has_purple or (has_blue and has_red):
+                    color = ct.PURPLE
+                else:
+                    if has_blue:
+                        color = ct.BLUE
+                    else:
+                        assert(has_red)
+                        color = ct.RED
+                leaves[node_id] = color
+#                print "!", node_id, color
+        uncolored = next_uncolored
+    return leaves
 
 
 class suffix_tree_node(base_triee_node):
@@ -158,8 +215,12 @@ class suffix_tree_node(base_triee_node):
         self.label = None
         self.old_position = old_position
     def set_label(self, label): self.label = label
+    def set_color(self, color): self.color = color
     def emit(self):
-        return 'id: %s, label: %s, children: %s' % (self.node_id, self.label, self.children)
+        if hasattr(self, 'color'):
+            return 'id: %s, label: %s, color: %s, children: %s' % (self.node_id, self.label, self.color, self.children)   
+        else: 
+            return 'id: %s, label: %s, children: %s' % (self.node_id, self.label, self.children)
     def emit_edges(self, args = None):
         # pretty-prints the parent-child connections
         if not args:
@@ -170,21 +231,24 @@ class suffix_tree_node(base_triee_node):
             else:
                 result = [args['text'][start:(start+length)] for (start, length) in self.children]
         return result
-    def longest_repeat(self, start_pos = None):
-        if self.is_leaf():
-#            print "leaf", start_pos
-            return start_pos, -1
+    def longest_repeat(self, start_pos = None, start_length = 0, common = False):
+        # if common = True, it assumes that nodes have colors
+        if self.is_leaf() or (common and self.color!=constants.PURPLE):
+            print "id", self.node_id, "leaf", self.is_leaf(), "color", self.color
+            return start_pos, 0
         else:
             max_length = 0
-            max_pos = start_pos
+            max_pos = (start_pos if start_pos else 0) + start_length
             for ((pos, length), child_id) in self.children.iteritems():
+                if common and self.payload[child_id].color != constants.PURPLE: continue
 #                print "pos", pos, "length", length
-                child_pos, child_length = self.payload[child_id].longest_repeat(pos)
+                child_pos, child_length = self.payload[child_id].longest_repeat(pos, length, common)
 #                print "child_pos", child_pos, "child_length", child_length
-                if child_length>=0 and (length + child_length > max_length):
-                    max_length = length + child_length
-                    max_pos = start_pos or child_pos
-            return max_pos, max_length
+                if child_length>0 and (child_length > max_length):
+                    max_length = child_length
+                    max_pos = child_pos
+            print "id", self.node_id, "color", self.color, "pos", max_pos - start_length, "length", max_length+start_length, "common", common
+            return max_pos - start_length, max_length + start_length
 
 
 class suffix_tree(base_triee):
@@ -199,7 +263,7 @@ class suffix_tree(base_triee):
         # 3. adds all of them to payload, notes the new position <=> old position
         # 4. iterate over all nodes which made it to suffix tree and add the children (end nodes)
         self.text = source.text
-        nb_paths = non_branching_paths(source.to_edges())
+        nb_paths = non_branching_paths(source.to_edges(), check_parents = False, check_cycles = False)
         new_kids = dict([(path[1], path) for path in nb_paths]) # used to map the paths from the trie to tree
         remaining_nodes = set()
         map(lambda path: remaining_nodes.update(set([path[0], path[-1]])), nb_paths)
@@ -231,159 +295,52 @@ class suffix_tree(base_triee):
                     end_pos = end_node.position
                     # add the new link
                     new_node.children[(start_pos, 1+end_pos-start_pos)] = new_end_node
-    def longest_repeat(self):
-        max_pos, max_length = self.root.longest_repeat()
+    def longest_repeat(self, common = False):
+        print "longest_repeat", common
+        if common: self.color()
+        max_pos, max_length = self.root.longest_repeat(None, 0, common)
         return self.text[max_pos:(max_pos+max_length)]
-
+    def color(self):
+        color_pos = self.text.find('#')+1
+        if color_pos<=0: raise ValueError('No delimiter to set color position!')
+        node_ids = xrange(len(self.payload))
+        edges = {node_id:self.payload[node_id].children.values() for node_id in node_ids}
+        leaves = {node_id:constants.GRAY for node_id in node_ids}
+        for node_id in leaves.keys():
+            node = self.payload[node_id]
+            if node.is_leaf(): leaves[node_id] = constants.BLUE if node.label < color_pos else constants.RED
+        colored_leaves = tree_coloring(edges, leaves)
+        print "edges", edges
+        print "leaves", leaves
+        print "colored_leaves", colored_leaves
+        map (lambda node_id: self.payload[node_id].set_color(colored_leaves[node_id]), colored_leaves.keys())
 """
-
-class suffix_node():
-    def __init__(self, parent, position = None):
-        self.parent = parent
-        self.children = {}
-        self.position = position
-        self.label = None
-    def has_child(self, symbol): return symbol in self.children
-    def get_index(self, symbol): return self.children[symbol]
-    def get(self, symbol): return self.parent[self.children[symbol]]
-    def head_index(self): return self.children.itervalues().next()
-    def add(self, symbol, position):
-        self.children[symbol] = len(self.parent)
-        self.parent.append(suffix_node(self.parent, position))
-        return self.get(symbol)
-    def is_leaf(self): return not self.children
-    def set_label(self, new_label): self.label = new_label
-    def out_degree(self): return len(self.children)
-    def keys(self): return self.children.keys()
-    def emit(self): return "(%s, %s, %s)" % (self.position, self.label, self.children)
-
-class suffix_trie():
-    def __init__(self):
-        self.children = []
-        self.children.append(suffix_node(self.children))
-    def preconstruct(self, text):
-        self.text = text
-        #print "text", self.text
-        len_text = len(text)
-        for i in xrange(len_text):
-            current_node = self.children[0]
-            for j in xrange(i, len_text):
-                current_symbol = text[j]
-                if current_node.has_child(current_symbol):
-                    current_node = current_node.get(current_symbol)
+        uncolored = set(range(len(self.payload)))
+        next_uncolored = set()
+        while uncolored:
+            for node_id in uncolored:
+#                print "node_id"
+                node = self.payload[node_id]
+                if node.is_leaf():
+                    node.color = constants.BLUE if node.label<color_pos else constants.RED
+#                    print "leaf", node_id, "color", node.color
                 else:
-                    current_node = current_node.add(current_symbol, j)
-            if current_node.is_leaf(): current_node.set_label(i)
-    def emit(self):
-        for index, child in enumerate(self.children):
-            for key in child.keys():
-                child_index = child.get_index(key)
-                yield '%s->%s:%s,%s' %(index, child_index, key, self.children[child_index].position)
-    def non_branching_paths(self):
-        paths = set()
-        indices = set([0])
-        while indices:
-            index = indices.pop()
-            node = self.children[index] 
-            for child in node.children:
-                start = node.get_index(child)
-#                print "child:", child, "start:", start
-                end = start
-                next_end = start
-                degree = self.children[end].out_degree()
-#                print "end 0", end, "degree", degree
-                while degree==1:
-                    end = self.children[end].head_index()
-                    degree=self.children[end].out_degree()
-#                    print "end", end, "degree", degree
-                paths.add((index, start, end))
-                if degree>1: indices.add(next_end)
-        return paths
-    def emit_paths(self, paths, details = False):
-        for (index, start, end) in paths:
-            start_pos, end_pos = self.children[start].position, self.children[end].position
-            if not details:
-                yield self.text[start_pos:(end_pos+1)]
-            else:
-                label = self.children[end].label or '-'
-                yield (self.text[start_pos:(end_pos+1)], start_pos, end_pos+1-start_pos, label)
-
-class st_node():
-    def __init__(self, parent):
-        self.parent = parent
-        self.label = None
-        self.children = {}
-    def is_leaf(self): return self.label is not None
-    def get(self, key): return self.parent[self.children[key]]
-    def longest_repeat(self, start = None, length = 0):
-        if self.is_leaf():
-#            print "leaf", start, length
-            return (start, 0)
-        else:
-            max_length = 0
-            max_position = None
-#            print "children", [key for key in self.children]
-            for key in self.children:
-                (child_position, child_length) = key
-                child = self.get(key)
-                (new_child_position, new_child_length) = child.longest_repeat(child_position, child_length)
-#                print "child", child, "pos", new_child_position, "len", new_child_length
-                if new_child_length > max_length:
-                    max_length = new_child_length
-                    max_position = new_child_position
-            start = start or max_position
-#            print "start", start, "length", length + max_length
-            return (start, length + max_length)
-    def all_repeats(self, aggregator, start = None, length = 0):
-        if self.is_leaf():
-            return
-        else:
-            if (start and length): aggregator.add((start, length))
-            for key in self.children:
-                (child_position, child_length) = key
-                child = self.get(key)
-                child.all_repeats(aggregator, start or child_position, length + child_length)
-
-
-class suffix_tree():
-    def __init__(self):
-        self.children={}
-    #st: suffix_trie
-    def from_trie(self, st):
-        self.text = st.text
-        paths = st.non_branching_paths()
-#        print "paths", list(st.emit_paths(paths, True))
-        hubs = set([hub for (hub,first,last) in paths])
-        stretches = dict([(first, last) for (hub,first,last) in paths])
-        nodes = set([last for (hub,first,last) in paths])
-        nodes.add(0)
-        #enumerate tree nodes
-        for (index, node) in enumerate(st.children):
-            if index in nodes:
-                new_node=st_node(self.children)
-                new_node.label = node.label
-                #enumerate node children
-                for (child, ch_index) in node.children.iteritems():
-                    #find stretch
-                    end_index = stretches[ch_index]
-                    start_pos = st.children[ch_index].position
-                    end_pos = st.children[end_index].position
-                    new_node.children[(start_pos, end_pos+1-start_pos)] = end_index
-#                print "index", index, "label", new_node.label, "children", len(new_node.children)
-                self.children[index] = new_node
-    
-    def longest_repeat(self):
-        (position, length) = self.children[0].longest_repeat()
-        return self.text[position:position+length]
-
-    def all_repeats(self):
-        aggregator = set()
-        self.children[0].all_repeats(aggregator)
-        return set([self.text[start:(start+length)] for (start,length) in aggregator])
-
-    def emit(self):
-        for (key, value) in self.children.iteritems():
-            for child, child_value in value.children:
-                yield (key, value.label, child, child_value)
-
+                    if not all(hasattr(self.payload[child_id], 'color') for child_id in node.children.values()): 
+                        next_uncolored.add(node_id)
+#                        print "skip", node_id
+                    else:
+                        has_purple = any(self.payload[child_id].color==constants.PURPLE for child_id in node.children.values())
+                        has_blue = any(self.payload[child_id].color==constants.BLUE for child_id in node.children.values())
+                        has_red = any(self.payload[child_id].color==constants.RED for child_id in node.children.values())
+#                        print "node_id", node_id, "has_red", has_red, "has_blue", has_blue
+                        if has_purple or (has_blue and has_red):
+                            node.color = constants.PURPLE
+                        else:
+                            if has_blue:
+                                node.color = constants.BLUE
+                            else:
+                                node.color = constants.RED
+            uncolored = next_uncolored
+            next_uncolored = set()
 """
+

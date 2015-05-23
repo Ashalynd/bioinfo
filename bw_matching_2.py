@@ -8,16 +8,21 @@ import bio.burrows_wheeler
 def do_work(source):
     text = None
     patterns = None
-    bwt_text = source.next()
+    text = source.next()
     patterns = source.next().split()
     for s in source:
         continue
 #    print text, patterns
     results = []
-#    bwt_text = bio.burrows_wheeler.bwt(text)
+    text = bio.burrows_wheeler.reverse_bwt(text)
     for p in patterns:
-        result = bio.burrows_wheeler.bwmatching(bwt_text, p)
-        results.append(result)
+        count = 0
+        first_index = -1
+        first_index = text.find(p)
+        while first_index>=0:
+            count+=1
+            first_index = text.find(p, first_index+1)
+        results.append(count)
     return bio.io_utils.gen_array(results)
 
 bio.io_utils.generate_input_output(do_work, True, True)
