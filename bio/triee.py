@@ -210,10 +210,9 @@ def tree_coloring(edges, input_leaves):
 
 
 class suffix_tree_node(base_triee_node):
-    def __init__(self, payload, old_position = 0):
+    def __init__(self, payload, args = None):
         base_triee_node.__init__(self, payload)
         self.label = None
-        self.old_position = old_position
     def set_label(self, label): self.label = label
     def set_color(self, color): self.color = color
     def emit(self):
@@ -234,7 +233,7 @@ class suffix_tree_node(base_triee_node):
     def longest_repeat(self, start_pos = None, start_length = 0, common = False):
         # if common = True, it assumes that nodes have colors
         if self.is_leaf() or (common and self.color!=constants.PURPLE):
-            print "id", self.node_id, "leaf", self.is_leaf(), "color", self.color
+#            print "id", self.node_id, "leaf", self.is_leaf(), "color", self.color
             return start_pos, 0
         else:
             max_length = 0
@@ -247,7 +246,7 @@ class suffix_tree_node(base_triee_node):
                 if child_length>0 and (child_length > max_length):
                     max_length = child_length
                     max_pos = child_pos
-            print "id", self.node_id, "color", self.color, "pos", max_pos - start_length, "length", max_length+start_length, "common", common
+#            print "id", self.node_id, "color", self.color, "pos", max_pos - start_length, "length", max_length+start_length, "common", common
             return max_pos - start_length, max_length + start_length
 
 
@@ -256,6 +255,12 @@ class suffix_tree(base_triee):
         return suffix_tree_node(self.payload)
     def emit_edges_with_text(self): return self.emit_edges({'text': self.text})
     def emit_edges_as_text(self): return self.emit_edges({'text': self.text, 'compact': True})
+    def to_text(self, pos, length): return self.text[pos:pos+length]
+
+    def acc_to_text(self, acc):
+        # converts accelerator (a sequence of lists of (pos, length) tuples) into a set of strings
+        return set(map(lambda seq: ''.join(map(lambda elem: self.to_text(elem[0],elem[1]), seq)), acc))    
+
     def from_trie(self, source):
         # builds a suffix tree from suffix trie
         # 1. generates non branching paths
@@ -270,7 +275,7 @@ class suffix_tree(base_triee):
         old_to_new = {0:0}
         # relationships between old and new positions
         for index, old_position in enumerate(sorted(list(remaining_nodes))[1:]): # 0 is already there
-            new_node = suffix_tree_node(self.payload, old_position)
+            new_node = suffix_tree_node(self.payload)
             old_to_new[old_position] = new_node.node_id # translating position in trie to position in tree
         for node in remaining_nodes:
             # get the old node and a node to which it will be converted
@@ -295,52 +300,146 @@ class suffix_tree(base_triee):
                     end_pos = end_node.position
                     # add the new link
                     new_node.children[(start_pos, 1+end_pos-start_pos)] = new_end_node
+
     def longest_repeat(self, common = False):
-        print "longest_repeat", common
+#        print "longest_repeat", common
         if common: self.color()
         max_pos, max_length = self.root.longest_repeat(None, 0, common)
-        return self.text[max_pos:(max_pos+max_length)]
+        return self.to_text(max_pos,max_length)
+
+    def all_repeats(self, common = False):
+        if common: self.color()
+        acc = set()
+        pool = {self.root.node_id:[]}
+        while pool:
+            node_id, chains = pool.popitem()
+            node = self.payload[node_id]
+            if node.is_leaf() or (common and node.color!=constants.PURPLE): continue
+            for i in xrange(len(chains)): 
+                acc.add(tuple(chains[i:])) # not really necessary at this step?
+            for ((pos, length), child_id) in node.children.iteritems():
+                pool[child_id] = chains + [(pos,length)]
+        return self.acc_to_text(acc)
+
+    def all_uniques(self, the_color = constants.BLUE):
+        self.color()
+        acc = set()
+        pool = {self.root.node_id:[]}
+        while pool:
+            node_id, chains = pool.popitem()
+#            print "acc", acc
+            node = self.payload[node_id]
+            if node.color not in (constants.PURPLE, the_color): continue
+            has_color = node.color == the_color
+#            print "node_id", node_id, "chains", chains, "color", node.color
+            if has_color:
+                for i in xrange(len(chains)):
+                    if not i or chains[i][2]: acc.add(tuple([item[:-1] for item in chains[i:]]))
+            if node.is_leaf(): continue
+            for ((pos, length), child_id) in node.children.iteritems():
+                pool[child_id] = chains + [(pos,length, has_color)]
+        return self.acc_to_text(acc)
+
     def color(self):
         color_pos = self.text.find('#')+1
         if color_pos<=0: raise ValueError('No delimiter to set color position!')
+        # make edges and leaves for coloring procedure
         node_ids = xrange(len(self.payload))
         edges = {node_id:self.payload[node_id].children.values() for node_id in node_ids}
-        leaves = {node_id:constants.GRAY for node_id in node_ids}
-        for node_id in leaves.keys():
-            node = self.payload[node_id]
-            if node.is_leaf(): leaves[node_id] = constants.BLUE if node.label < color_pos else constants.RED
+        def assign_color(node, color_pos):
+            if not node.is_leaf(): return constants.GRAY
+            return constants.BLUE if node.label < color_pos else constants.RED
+        leaves = {node_id:assign_color(self.payload[node_id], color_pos) for node_id in node_ids}
         colored_leaves = tree_coloring(edges, leaves)
-        print "edges", edges
-        print "leaves", leaves
-        print "colored_leaves", colored_leaves
+        # reassign colors
         map (lambda node_id: self.payload[node_id].set_color(colored_leaves[node_id]), colored_leaves.keys())
-"""
-        uncolored = set(range(len(self.payload)))
-        next_uncolored = set()
-        while uncolored:
-            for node_id in uncolored:
-#                print "node_id"
-                node = self.payload[node_id]
+
+    def to_suffix_array(self):
+        result = [self.root.node_id]
+        next_result = []
+        has_children = True
+        #first initialization: all children of the root node (all possible first letters)
+        while has_children:
+            next_result = []
+            has_children = False
+            # the result nodes should be lexicographically sorted automatically
+            for node_id in result:
+                node = self.get_node(node_id)
+                has_children = has_children or node.children
                 if node.is_leaf():
-                    node.color = constants.BLUE if node.label<color_pos else constants.RED
-#                    print "leaf", node_id, "color", node.color
-                else:
-                    if not all(hasattr(self.payload[child_id], 'color') for child_id in node.children.values()): 
-                        next_uncolored.add(node_id)
-#                        print "skip", node_id
-                    else:
-                        has_purple = any(self.payload[child_id].color==constants.PURPLE for child_id in node.children.values())
-                        has_blue = any(self.payload[child_id].color==constants.BLUE for child_id in node.children.values())
-                        has_red = any(self.payload[child_id].color==constants.RED for child_id in node.children.values())
-#                        print "node_id", node_id, "has_red", has_red, "has_blue", has_blue
-                        if has_purple or (has_blue and has_red):
-                            node.color = constants.PURPLE
-                        else:
-                            if has_blue:
-                                node.color = constants.BLUE
-                            else:
-                                node.color = constants.RED
-            uncolored = next_uncolored
-            next_uncolored = set()
-"""
+                    # just add the leaf and continue
+                    next_result.append(node_id)
+                    continue
+                print "keys", node.children.keys()
+                for child_key in sorted(node.children.keys(), key = lambda (pos,len):self.text[pos]):
+                    # add children for the next round
+                    next_result.append(node.children[child_key])
+            print "next_result", next_result
+            pos_result = map(lambda node_id: self.get_node(node_id).label, next_result)
+            print "pos_result", pos_result
+            result = next_result
+        # hopefully, we get out of the cycle with the array, containing node_ids of sorted suffixes
+        # now, convert them into starting positions
+        pos_result = map(lambda node_id: self.get_node(node_id).label, result)
+        return pos_result
+
+    def from_suffix_array(self, text, suffix_array, lcp):
+        # keep only the root node
+#        assert(len(self.payload)==1, "The tree is already initialized")
+        self.text = text
+        self.root.children = {}
+        len_text = len(text)
+        last_path = [(0, 0)] # index, descend
+        for (suffix, prefix) in zip(suffix_array, lcp):
+#            print "!", suffix, prefix, text[suffix:suffix+prefix+1]
+            last_node_key = None
+#            print "last_path", last_path, "payload_len", len(self.payload)
+            while last_path[-1][1]>prefix: last_node_key = last_path.pop(-1)
+            index, descend = last_path[-1]
+            node = self.get_node(index)
+            if descend == prefix: # just add the new node
+                key = (suffix + prefix, len_text-(suffix + prefix))
+#                print "new key", key
+                child = node.ensure_child(key)
+                child.label = suffix
+                last_path.append((child.node_id, descend + key[1]))
+#                print "new node: last_path", last_path, "payload_len", len(self.payload)
+            else:
+#                print "last_node_key", last_node_key
+                next_index, next_descend = last_node_key
+                next_node = self.get_node(next_index)
+                #should replace the key leading to this node, remove the label and add two new leavs
+#                assert(next_index==len(self.payload)-1)
+                next_key = None
+                # arghh no other way to find that child
+                for (key, value) in node.children.iteritems():
+                    if value == next_index:
+                        next_key = key
+                        break
+                assert(next_key is not None)
+                removed_index = node.children.pop(next_key)
+                assert(removed_index==next_index)
+                # now, create the new hub and add it to last_path
+                diff = prefix - descend
+                hub_key = (next_key[0], diff)
+#                print "hub key", hub_key
+                hub_child = node.ensure_child(hub_key)
+                last_path.append((hub_child.node_id, prefix))
+                # add the old node to the hub
+                old_child_key = (next_key[0] + diff, next_key[1] - diff)
+#                print "old child key", old_child_key
+                hub_child.children[old_child_key] = next_index
+                # add the new node to the hub and to the last_path
+                new_child_key = (suffix + prefix, len_text - (suffix + prefix))
+#                print "new child key", new_child_key
+                new_child = hub_child.ensure_child(new_child_key)
+                new_child.label = suffix
+                last_path.append((new_child.node_id, descend + new_child_key[1]))
+#                print "extra node: last_path", last_path, "payload_len", len(self.payload)
+
+
+
+
+
+
 

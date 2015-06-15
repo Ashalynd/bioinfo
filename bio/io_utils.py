@@ -2,6 +2,9 @@ import sys, fileinput
 
 output = []
 
+def eat_line(source):
+    source.next()
+
 def read_input():
   source = fileinput.input()
   result = []
@@ -25,7 +28,10 @@ def read_adjacency_list(source, as_int = True):
     if as_int: 
       values = [int(v) for v in values]
       key = int(key)
-    result[key] = values
+    if key not in result:
+      result[key] = values
+    else:
+      result[key].extend(values)
   return result
 
 def read_adjacency_list_with_weight(source, as_int = True):
@@ -43,12 +49,33 @@ def read_adjacency_list_with_weight(source, as_int = True):
       result[parent][child] = weight
   return result
 
+def read_float_list(source):
+    result = []
+    for line in source:
+        row = tuple([float(elem) for elem in line.split()])
+        result.append(row)
+    return result
+
 def read_int_matrix(source):
     result = []
     for line in source:
         row = [int(elem) for elem in line.split()]
         result.append(row)
     return result
+
+def read_elements(source):
+    return [p for p in source.next().split()]
+
+def read_state_matrix(source):
+    separator = '-'
+    row_states = read_elements(source)
+    probs = {}
+    for line in source:
+        if line[0] == separator: break
+        elements = line.split()
+        state, state_probs = elements[0], [float(p) for p in elements[1:]]
+        probs[state] = {state:prob for (state, prob) in zip(row_states, state_probs)}
+    return probs
 
 def generate_input(source, status):
   for line in source:
@@ -94,6 +121,8 @@ def generate_input_output(method, sort_output = False, compare = True):
     print out
   else:
     source.close()
+    if sort_output:
+      result = generate_sorted(result)
     for r in result:
       print r
 
@@ -111,6 +140,9 @@ def compare_with_output(result):
   else:
     for line in local_result: line = " ".join([str(i) for i in line])
   return local_result==output
+
+def stringify_array_format(data, concat = ' ', format = '%s'):
+  return concat.join([format % i for i in data])
 
 def stringify_array(data, concat = ' '):
   return concat.join([str(i) for i in data])
@@ -131,6 +163,11 @@ def gen_lines(data, converter = None):
       yield line
     else:
       yield converter(line)
+
+def gen_lines_format(data, concat = ' ', format = '%s'):
+  for line in data:
+    yield stringify_array_format(line, concat, format)
+
 
 def gen(data): yield str(data)
 

@@ -40,8 +40,7 @@ def reverse_bwt(last):
     return result
 
 def bwmatching(last, pattern, suffix_array = None):
-#    print "last", last, "pattern", pattern
-#    if suffix_array: print "suffix_array", suffix_array
+    empty_result = 0 if not suffix_array else []
     first = sorted(last)
     pos = []
     prev_letter = ''
@@ -56,14 +55,10 @@ def bwmatching(last, pattern, suffix_array = None):
     letters = dict([(l, []) for l in set(last)])
     for index, letter in enumerate(last):
         letters[letter].append(index)
-#    print "letters", letters
-#    print "pos", pos
     lastfirst = [0]*len(pos)
-#    print lastfirst
     for index, letter in enumerate(first):
         lastpos = letters[letter][pos[index]]
         lastfirst[lastpos] = index
-#    print "lastfirst", lastfirst, "len", len(lastfirst)
     top = 0
     bottom = len(last)-1
     while top<=bottom:
@@ -76,10 +71,7 @@ def bwmatching(last, pattern, suffix_array = None):
             if top_index>=0: 
                 bottom_index = sub_last.rfind(symbol)
             else:
-                if not suffix_array:
-                    return 0
-                else:
-                    return []
+                return empty_result
             if bottom_index+top_index>=0:
                 top_index+=top
                 bottom_index +=top
@@ -87,12 +79,50 @@ def bwmatching(last, pattern, suffix_array = None):
                 top = lastfirst[top_index]
                 bottom = lastfirst[bottom_index]
             else:
-                if not suffix_array:
-                    return 0
-                else:
-                    return []
+                return empty_result
         else:
             if not suffix_array:
                 return bottom-top+1
             else:
                 return [suffix_array[i] for i in xrange(top, bottom+1)]
+
+def count(text, with_bwt_transform = False):
+    if with_bwt_transform: text = bwt(text)
+    sorted_letters = sorted(list(set(text)))
+    letters = {letter:index for (index, letter) in enumerate(sorted_letters)}
+    outcome = []
+    row = [0]*len(letters)
+    for letter in text:
+        outcome.append(row)
+        index = letters[letter]
+        row = row[:index]+[row[index]+1]+row[index+1:]
+    outcome.append(row) # add the last row
+    return outcome, letters
+
+def better_bwmatching(last, pattern, counts = None, letter_places = None):
+    result = 0
+    first = sorted(last)
+    first_occurence = {}
+    prev_letter = ''
+    for index, letter in enumerate(first):
+        if letter == prev_letter: continue
+        first_occurence[letter] = index
+        prev_letter = letter
+#    print "first_occurence", first_occurence
+    if not counts or not letter_places: counts, letter_places = count(last)
+#    print "counts", counts, "letter_places", letter_places
+    top = 0
+    bottom = len(last)-1
+    pattern_index = len(pattern)-1
+    while top <= bottom:
+#        print "index", pattern_index, "top", top, "bottom", bottom, "fragment", last[top:bottom]
+        if pattern_index < 0: 
+            result = bottom - top + 1
+            break
+        symbol = pattern[pattern_index]
+        pattern_index-=1
+#        print "symbol", symbol
+        if not symbol in last[top:bottom+1]: break
+        top = first_occurence[symbol] + counts[top][letter_places[symbol]]
+        bottom = first_occurence[symbol] + counts[bottom+1][letter_places[symbol]]-1
+    return result
