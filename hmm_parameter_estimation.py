@@ -6,16 +6,6 @@ import bio.triee
 import bio.cluster as cl
 import math
 
-def gen_matrices(states, external_states, transition_probs, emission_probs, delim = '\t'):
-    yield delim+ io.stringify_array(states, delim)
-    for i, s in enumerate(states):
-        yield s+delim+ io.stringify_array_format(transition_probs[i], concat=delim, format='%.3f')
-    yield('--------')
-    yield delim + io.stringify_array(external_states, delim)
-    for i, s in enumerate(states):
-        yield s+ delim + io.stringify_array_format(emission_probs[i], concat=delim, format='%.3f')
-
-
 
 def do_work(source):
     output = source.next()
@@ -79,6 +69,6 @@ def do_work(source):
     print "transition_probs", transition_probs
     print "emission_probs", emission_probs
 
-    return gen_matrices(states, external_states, transition_probs, emission_probs, ' ')
+    return io.gen_matrices(states, external_states, transition_probs, emission_probs, ' ')
 
 io.generate_input_output(do_work, False, True)

@@ -112,7 +112,7 @@ def generate_input_output(method, sort_output = False, compare = True):
         o = output.next()
         print r
         print o
-        out = (o == r)
+        out = (o.strip() == r.strip())
         if not out: break
       except StopIteration:
         out = False
@@ -139,10 +139,16 @@ def compare_with_output(result):
       local_result = [str(result)]
   else:
     for line in local_result: line = " ".join([str(i) for i in line])
-  return local_result==output
+  return local_result.strip()==output.strip()
+
+def prob_format(x):
+  return '0' if not x else ('1.0' if x==1 else ('%.3f' % x).rstrip('0'))
 
 def stringify_array_format(data, concat = ' ', format = '%s'):
-  return concat.join([format % i for i in data])
+  if type(format) == str:
+    return concat.join([format % i for i in data])
+  else: # assume 'function'
+    return concat.join([format(i) for i in data])
 
 def stringify_array(data, concat = ' '):
   return concat.join([str(i) for i in data])
@@ -156,6 +162,16 @@ def gen_array(data, concat = ' '):
 def gen_matrix(data, concat = ' '):
   for row in matrix:
     return gen_array(row)
+
+def gen_matrices(states, external_states, transition_probs, emission_probs, delim = '\t', format = '%.3f'):
+    yield delim+ stringify_array(states, delim)
+    for i, s in enumerate(states):
+        yield s+delim+ stringify_array_format(transition_probs[i], concat=delim, format=format)
+    yield('--------')
+    yield delim + stringify_array(external_states, delim)
+    for i, s in enumerate(states):
+        yield s+ delim + stringify_array_format(emission_probs[i], concat=delim, format=format)
+
 
 def gen_lines(data, converter = None):
   for line in data:
